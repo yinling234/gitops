@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: myapp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: myapp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: myapp-sa
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        runAsNonRoot: true
+      containers:
+        - name: myapp
+          image: 192.168.30.11:30003/library/myapp:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          env:
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: myapp-config
+                  key: app_env
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: myapp-config
+                  key: log_level
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: harbor-regcred
+
+  strategy:
+    canary:
+      maxSurge: "25%"
+      maxUnavailable: 0
+      trafficRouting:
+        nginx:
+          stableIngress: myapp   # 引用 Ingress 名称，Rollouts 会克隆并修改它来切分流量
+      analysis:
+        templates:
+          - templateName: myapp-success-rate
+      steps:
+        - setWeight: 20
+        - pause: { duration: 1m }
+        - setWeight: 50
+        - pause: { duration: 1m }
+        - setWeight: 80
+        - pause: { duration: 1m }

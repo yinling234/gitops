@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myapp-config
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/managed-by: argocd
+data:
+  app_env: "development"
+  log_level: "info"
+  max_requests: "1000"
+  timeout_seconds: "30"

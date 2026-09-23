@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: myapp-allow-all
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: myapp
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # 1. 允许 monitoring 命名空间抓取指标（Prometheus）
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+    # 2. 允许集群内网段访问（Ingress Controller / 内部服务调用）
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # 1. 允许 DNS 解析
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+    # 2. 允许访问数据库（MySQL 3306）
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 3306
+    # 3. 允许访问 monitoring 命名空间（推送自定义指标）
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090

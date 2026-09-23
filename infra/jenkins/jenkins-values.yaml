@@ -1,0 +1,31 @@
+controller:
+  admin:
+    username: jenkins-admin
+    password: "Jenkins@123456"
+  serviceType: NodePort
+  service:
+    nodePort: 32080
+  resources:
+    requests:
+      cpu: "300m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+  persistence:
+    enabled: true
+    existingClaim: "jenkins"
+  numExecutors: 0           # Controller 不执行构建，全部由 Agent 承担
+  installPlugins: []
+
+agent:
+  enabled: false
+
+persistence:
+  enabled: true
+  existingClaim: "jenkins"
+
+networkPolicy:
+  enabled: false
+ingress:
+  enabled: false

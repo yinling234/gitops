@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev
+
+resources:
+  - ../../base
+
+patches:
+  - path: rollout-patch.yaml
+  - path: ingress-patch.yaml
+
+images:
+  - name: 192.168.30.11:30003/library/myapp
+    newTag: v1.0.0
+
+configMapGenerator:
+  - name: myapp-config
+    behavior: merge
+    literals:
+      - app_env=development
+      - log_level=debug
+      - max_requests=100

@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: myapp-success-rate
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/managed-by: argocd
+spec:
+  args:
+    - name: service-name
+    - name: namespace
+  metrics:
+    # 指标 1：HTTP 成功率 ≥ 95%
+    - name: success-rate
+      interval: 30s
+      count: 6
+      failureLimit: 2
+      consecutiveErrorLimit: 3
+      successCondition: result[0] >= 0.95
+      failureCondition: result[0] < 0.90
+      provider:
+        prometheus:
+          address: http://prometheus-stack-kube-prom-prometheus.monitoring.svc:9090
+          query: |
+            sum(rate(
+              http_requests_total{
+                service_name="{{args.service-name}}",
+                namespace="{{args.namespace}}",
+                code!~"5.*"
+              }[2m]
+            ))
+            /
+            sum(rate(
+              http_requests_total{
+                service_name="{{args.service-name}}",
+                namespace="{{args.namespace}}"
+              }[2m]
+            ))
+
+    # 指标 2：P95 延迟 ≤ 500ms
+    - name: p95-latency
+      interval: 30s
+      count: 6
+      failureLimit: 2
+      consecutiveErrorLimit: 3
+      successCondition: result[0] <= 0.5
+      failureCondition: result[0] > 0.8
+      provider:
+        prometheus:
+          address: http://prometheus-stack-kube-prom-prometheus.monitoring.svc:9090
+          query: |
+            histogram_quantile(0.95,
+              sum(rate(
+                http_request_duration_seconds_bucket{
+                  service_name="{{args.service-name}}",
+                  namespace="{{args.namespace}}"
+                }[2m]
+              )) by (le)
+            )

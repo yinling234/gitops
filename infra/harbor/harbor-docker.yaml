@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-regcred
+  namespace: dev
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyIxOTIuMTY4LjMwLjExOjMwMDAzIjp7ImF1dGgiOiJZV1J0YVc0NlNHRnlZbTl5TVRJek5EVT0ifX19
+---
+# 同样在 staging、prod 命名空间各创建一份
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-regcred
+  namespace: staging
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyIxOTIuMTY4LjMwLjExOjMwMDAzIjp7ImF1dGgiOiJZV1J0YVc0NlNHRnlZbTl5TVRJek5EVT0ifX19
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: harbor-regcred
+  namespace: prod
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyIxOTIuMTY4LjMwLjExOjMwMDAzIjp7ImF1dGgiOiJZV1J0YVc0NlNHRnlZbTl5TVRJek5EVT0ifX19
+

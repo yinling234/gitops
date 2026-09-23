@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: myapp-pdb
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/managed-by: argocd
+spec:
+  minAvailable: "50%"
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: myapp

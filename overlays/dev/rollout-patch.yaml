@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: myapp
+spec:
+  replicas: 1
+  strategy:
+    canary:
+      # dev 环境：不分布放量，直接 100% 上线
+      steps:
+        - setWeight: 100
+      # 保留基础分析模板，若指标异常仍可回滚
+      analysis:
+        templates:
+          - templateName: myapp-success-rate
+        args:
+          - name: service-name
+            value: myapp
+          - name: namespace
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+  template:
+    spec:
+      containers:
+        - name: myapp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

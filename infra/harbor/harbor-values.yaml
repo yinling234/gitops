@@ -1,0 +1,54 @@
+expose:
+  type: nodePort
+  tls:
+    enabled: true
+    certSource: secret
+    secret:
+      secretName: harbor-tls
+  nodePort:
+    ports:
+      http:
+        port: 80
+        nodePort: 30002
+      https:
+        port: 443
+        nodePort: 30003
+
+externalURL: https://192.168.30.11:30003
+
+persistence:
+  enabled: true
+  persistentVolumeClaim:
+    registry:
+      size: 50Gi
+      storageClass: openebs-hostpath
+    chartmuseum:
+      size: 20Gi
+      storageClass: openebs-hostpath
+    jobservice:
+      size: 6Gi
+      storageClass: openebs-hostpath
+    database:
+      size: 5Gi
+      storageClass: openebs-hostpath
+    redis:
+      size: 5Gi
+      storageClass: openebs-hostpath
+    trivy:
+      size: 10Gi
+      storageClass: openebs-hostpath
+
+harborAdminPassword: "Harbor12345"
+secretKey: "not-a-secure-key"
+
+global:
+  imageRegistry: "registry.cn-hangzhou.aliyuncs.com"
+
+chartmuseum:
+  enabled: false
+clair:
+  enabled: false
+notary:
+  enabled: false
+trivy:
+  enabled: true
