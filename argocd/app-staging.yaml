@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: myapp-dev
+  name: myapp-staging
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -9,13 +9,13 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/yinling234/gitops
+    repoURL: https://github.com/yinling234/gitops.git
     targetRevision: main
-    path: overlays/dev
+    path: overlays/staging
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: dev
+    namespace: staging
 
   syncPolicy:
     automated:
