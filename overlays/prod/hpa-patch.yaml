@@ -1,11 +1,12 @@
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: myapp-hpa
-spec:
-  minReplicas: 3
-  maxReplicas: 10
-  metrics:
+- op: replace
+  path: /spec/minReplicas
+  value: 3
+- op: replace
+  path: /spec/maxReplicas
+  value: 10
+- op: replace
+  path: /spec/metrics
+  value:
     - type: Resource
       resource:
         name: cpu
@@ -18,7 +19,9 @@ spec:
         target:
           type: Utilization
           averageUtilization: 80
-  behavior:
+- op: replace
+  path: /spec/behavior
+  value:
     scaleUp:
       stabilizationWindowSeconds: 30
       policies:

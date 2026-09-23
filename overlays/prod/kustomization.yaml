@@ -7,13 +7,22 @@ resources:
   - ../../base
 
 patches:
-  - path: rollout-patch.yaml
-  - path: hpa-patch.yaml
-  - path: ingress-patch.yaml
+  - target:
+      kind: Rollout
+      name: myapp
+    path: rollout-patch.yaml
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: myapp-hpa
+    path: hpa-patch.yaml
+  - target:
+      kind: Ingress
+      name: myapp
+    path: ingress-patch.yaml
   - path: networkpolicy.yaml
 
 images:
-  - name: 192.168.30.11:30003/library/mcp-hr-server:latest
+  - name: 192.168.30.11:30003/library/mcp-hr-server
     newTag: v1.0.0
 
 configMapGenerator:

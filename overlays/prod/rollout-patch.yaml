@@ -1,39 +1,40 @@
-apiVersion: argoproj.io/v1alpha1
-kind: Rollout
-metadata:
-  name: myapp
-spec:
-  replicas: 3
-  strategy:
-    canary:
-      maxSurge: "50%"
-      maxUnavailable: 0
-      steps:
-        - setWeight: 10
-        - pause: { duration: 2m }
-        - setWeight: 30
-        - pause: { duration: 3m }
-        - setWeight: 60
-        - pause: { duration: 3m }
-        - setWeight: 100
-      analysis:
-        templates:
-          - templateName: myapp-success-rate
-        args:
-          - name: service-name
-            value: myapp
-          - name: namespace
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
-  template:
-    spec:
-      containers:
-        - name: myapp
-          resources:
-            requests:
-              cpu: 200m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 512Mi
+- op: replace
+  path: /spec/replicas
+  value: 3
+- op: replace
+  path: /spec/strategy/canary/maxSurge
+  value: "50%"
+- op: replace
+  path: /spec/strategy/canary/maxUnavailable
+  value: 0
+- op: replace
+  path: /spec/strategy/canary/steps
+  value:
+    - setWeight: 10
+    - pause: { duration: 2m }
+    - setWeight: 30
+    - pause: { duration: 3m }
+    - setWeight: 60
+    - pause: { duration: 3m }
+    - setWeight: 100
+- op: replace
+  path: /spec/strategy/canary/analysis
+  value:
+    templates:
+      - templateName: myapp-success-rate
+    args:
+      - name: service-name
+        value: myapp
+      - name: namespace
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+- op: replace
+  path: /spec/template/spec/containers/0/resources
+  value:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi

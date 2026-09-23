@@ -2,6 +2,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: myapp-hpa
+  namespace: staging          # ← 新增这一行，让 patch 能匹配到 overlay 注入命名空间后的 HPA
 spec:
   minReplicas: 2
   maxReplicas: 5
