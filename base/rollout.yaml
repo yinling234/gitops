@@ -73,9 +73,11 @@ spec:
     canary:
       maxSurge: "25%"
       maxUnavailable: 0
+      stableService: myapp            # ← 新增：稳定版 Service
+      canaryService: myapp-canary     # ← 新增：金丝雀版 Service
       trafficRouting:
         nginx:
-          stableIngress: myapp   # 引用 Ingress 名称，Rollouts 会克隆并修改它来切分流量
+          stableIngress: myapp        # 引用 Ingress 名称，Rollouts 会克隆并修改它来切分流量
       analysis:
         templates:
           - templateName: myapp-success-rate
