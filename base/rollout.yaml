@@ -44,12 +44,6 @@ spec:
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 5
           env:
             - name: APP_ENV
               valueFrom:
