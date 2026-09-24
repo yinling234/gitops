@@ -46,7 +46,7 @@ patches:
 
 images:
   - name: 192.168.30.11:30003/library/mcp-hr-server
-    newTag: v1
+    newTag: v2
 
 configMapGenerator:
   - name: myapp-config
