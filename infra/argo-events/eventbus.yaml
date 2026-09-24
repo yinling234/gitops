@@ -1,0 +1,13 @@
+apiVersion: argoproj.io/v1alpha1
+kind: EventBus
+metadata:
+  name: default
+  namespace: argo-events1
+spec:
+  jetstream:
+    version: "2.10.10"          # 不要用 latest，生产环境固定版本
+    replicas: 3                  # 根据集群规模调整，单节点可设为 1
+    persistence:
+      storageClassName: openebs-hostpath # 替换为你集群的实际 StorageClass
+      accessMode: ReadWriteOnce
+      volumeSize: 5Gi

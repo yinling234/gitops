@@ -1,0 +1,13 @@
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_ext
+prompt = no
+
+[req_distinguished_name]
+CN = 192.168.30.11
+
+[v3_ext]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature,keyEncipherment
+subjectAltName = IP:192.168.30.11
+

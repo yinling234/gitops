@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: jenkins-webhook-sensor
+  namespace: argo-events1
+spec:
+  template:
+    serviceAccountName: argo-events-sa
+  dependencies:
+    - name: github-push-dep
+      eventSourceName: github-event-source
+      eventName: github-push
+      # 只处理 main 分支的推送（可选，按需调整）
+      filters:
+        data:
+          - path: body.ref
+            type: string
+            value:
+              - "refs/heads/main"
+  triggers:
+    - template:
+        name: jenkins-trigger
+        http:
+          url: "http://192.168.30.11:32589/job/gitops-pipeline/buildWithParameters"
+          method: POST
+          headers:
+            Authorization: "Basic amVua2lucy1hZG1pbjoxMTIwYmM3ZjI5MWQ2MTRkMzJhNmIzNzc5NTgxOGNhZTRm"
+            Content-Type: "application/x-www-form-urlencoded"
+          parameters:
+            # 分支名：从 body.ref 提取，并去掉 "refs/heads/" 前缀
+            - src:
+                dependencyName: github-push-dep
+                dataKey: body.ref
+                # 用 Go template 去掉前缀
+                dataTemplate: '{{ replace "refs/heads/" "" .Input.body.ref }}'
+              dest: Git_BRANCH
+            # 提交 SHA
+            - src:
+                dependencyName: github-push-dep
+                dataKey: body.head_commit.id
+              dest: Git_COMMIT

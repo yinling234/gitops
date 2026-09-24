@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: github-event-source
+  namespace: argo-events1
+spec:
+  service:
+    ports:
+      - port: 12000
+        targetPort: 12000
+  github:
+    github-push:
+      # 仓库信息：手动创建的 webhook 也需要填写，但不需要 apiToken
+      repositories:
+        - owner: yinling234
+          names:
+            - gitops
+      # GitHub webhook 签名验证
+      webhookSecret:
+        name: github-webhook-secret
+        key: secret
+      # 监听端点
+      webhook:
+        endpoint: /github-push
+        port: "12000"
+        method: POST
+      events:
+        - push
+      contentType: json
+      # 注意：不要在这里加 apiToken，因为你是手动创建的 webhook
+      # 如果加了 apiToken，Argo Events 会尝试自动创建 webhook，可能产生冲突

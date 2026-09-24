@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-event-source-github-push
+  namespace: argo-events1
+spec:
+  type: NodePort
+  selector:
+    owner-name: github-event-source
+  ports:
+    - port: 12000
+      targetPort: 12000
+      nodePort: 30120

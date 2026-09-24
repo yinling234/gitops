@@ -8,8 +8,8 @@ pipeline {
         STAGING_NS         = "staging"
         PROD_NS            = "prod"
         // Git仓库地址
-        CODE_REPO_URL      = "https://github.com/xxx/your-business-code.git"
-        GITOPS_REPO_URL    = "https://github.com/xxx/your-gitops-config.git"
+        CODE_REPO_URL      = "https://github.com/yinling234/gitops.git"
+        GITOPS_REPO_URL    = "https://github.com/yinling234/gitops.git"
         // 镜像tag = git短commit hash
         IMAGE_TAG          = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
         IMAGE_FULL_NAME    = "${HARBOR_ADDR}/${HARBOR_PROJECT}/${APP_NAME}:${IMAGE_TAG}"

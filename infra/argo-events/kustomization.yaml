@@ -1,0 +1,8 @@
+# kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argo-events1
+
+resources:
+- https://raw.githubusercontent.com/argoproj/argo-events/stable/manifests/namespace-install.yaml
