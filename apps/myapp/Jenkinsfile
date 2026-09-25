@@ -182,6 +182,8 @@ pipeline {
 
                 // 触发 ArgoCD 硬刷新（如果装了 argocd CLI）
                 sh """
+                    export PATH=\$PATH:/var/jenkins_home/bin
+
                     if command -v argocd >/dev/null 2>&1; then
                         argocd app get ${STAGING_APP} --hard-refresh || true
                         argocd app wait ${STAGING_APP} --health --timeout 300 || true
@@ -193,6 +195,7 @@ pipeline {
 
                 // 等待 Rollout 就绪
                 sh """
+                    export PATH=\$PATH:/var/jenkins_home/bin
                     kubectl argo rollouts status ${ROLLOUT_NAME} -n ${STAGING_NS} --timeout 300s
                 """
             }
@@ -206,6 +209,8 @@ pipeline {
                 echo "==== 启动 LitmusChaos 混沌实验 ===="
 
                 sh """
+                    export PATH=\$PATH:/var/jenkins_home/bin
+
                     kubectl apply -f litmus/chaosengine.yaml -n ${STAGING_NS}
 
                     kubectl wait chaosengine ${CHAOS_ENGINE_NAME} \
@@ -216,6 +221,8 @@ pipeline {
 
                 echo "==== 判断混沌实验结果 ===="
                 sh """
+                    export PATH=\$PATH:/var/jenkins_home/bin
+
                     RESULT=\$(kubectl get chaosengine ${CHAOS_ENGINE_NAME} \
                         -n ${STAGING_NS} \
                         -o jsonpath='{.status.experimentStatus[0].verdict}')
@@ -292,6 +299,8 @@ pipeline {
                 echo "等待 ArgoCD 同步 prod，Argo Rollout 执行金丝雀发布"
 
                 sh """
+                    export PATH=\$PATH:/var/jenkins_home/bin
+
                     if command -v argocd >/dev/null 2>&1; then
                         argocd app get ${PROD_APP} --hard-refresh || true
                         argocd app wait ${PROD_APP} --health --timeout 600 || true
@@ -302,6 +311,7 @@ pipeline {
 
                 // 等待生产 Rollout 就绪（prod 步骤更长，给 10 分钟）
                 sh """
+                    export PATH=\$PATH:/var/jenkins_home/bin
                     kubectl argo rollouts status ${ROLLOUT_NAME} -n ${PROD_NS} --timeout 600s
                 """
 
