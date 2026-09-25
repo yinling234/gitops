@@ -207,8 +207,8 @@ pipeline {
         stage('7. 混沌测试 (LitmusChaos)') {
             steps {
                 script {
-                    def chaosFile = 'litmus/chaosengine.yaml'
-                    def rbacFile  = 'litmus/rbac.yaml'
+                    def chaosFile = 'infra/LitmusChaos/litmuschaosengine.yaml'
+                    def rbacFile  = 'infra/LitmusChaos/litmus-rbac.yaml'
 
                     if (fileExists(chaosFile)) {
                         echo "==== 1/3 应用 RBAC 配置 ===="
