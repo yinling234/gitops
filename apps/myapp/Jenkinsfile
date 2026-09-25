@@ -33,7 +33,6 @@ pipeline {
         stage('1. Checkout') {
             steps {
                 script {
-                    // 按 Argo Events 传入的分支拉取
                     checkout([
                         $class: 'GitSCM',
                         branches: [[name: "*/${params.GIT_BRANCH}"]],
@@ -43,12 +42,10 @@ pipeline {
                         ]]
                     ])
 
-                    // 如果传了具体 commit，校验 HEAD 是否一致
                     if (params.GIT_COMMIT != 'HEAD' && params.GIT_COMMIT != '') {
                         sh "git rev-parse HEAD | grep ${params.GIT_COMMIT}"
                     }
 
-                    // 用 commit 短哈希作为镜像 tag
                     def shortSha = sh(
                         script: 'git rev-parse --short HEAD',
                         returnStdout: true
@@ -69,7 +66,6 @@ pipeline {
         // ============================================================
         stage('2. 静态扫描 + 单元测试') {
             steps {
-                // ---------- 单元测试 ----------
                 echo "==== 2/2 单元测试 ===="
                 sh """
                     export PATH=\$PATH:/var/jenkins_home/go-sdk/go/bin
@@ -77,29 +73,19 @@ pipeline {
                     export PATH=\$PATH:\$GOPATH/bin
                     export GO111MODULE=on
 
-                    # 国内代理
                     go env -w GOPROXY=https://goproxy.cn,direct
                     go env -w GOSUMDB=off
 
                     cd apps/myapp
-
-                    # 下载依赖（首次构建需要，后续走缓存）
                     go mod download
-
-                    # 运行单元测试 + 生成覆盖率
                     go test -v -coverprofile=coverage.out -covermode=atomic ./...
-
-                    # 打印覆盖率摘要
                     go tool cover -func=coverage.out
                 """
             }
-
             post {
                 always {
-                    // 后续补充 JUnit / 覆盖率报告发布时，取消下面两行注释
                     // junit 'apps/myapp/reports/junit.xml'
                     // publishCoverage adapters: [coberturaAdapter('apps/myapp/coverage.xml')]
-
                     echo "Stage 2 完成"
                 }
             }
@@ -117,7 +103,6 @@ pipeline {
                 )]) {
                     sh """
                         export PATH=\$PATH:/var/jenkins_home/bin
-
                         docker login ${HARBOR_ADDR} -u \$HARBOR_USER -p \$HARBOR_PWD
                         cd apps/myapp
                         docker build -t ${env.IMAGE_FULL_NAME} .
@@ -154,7 +139,6 @@ pipeline {
                         git clone https://\${GIT_USER}:\${GIT_PWD}@${REPO_HOST} gitops-tmp
                         cd gitops-tmp
 
-                        # 更新 staging overlay 的 newTag
                         sed -i "s|newTag: .*|newTag: ${env.IMAGE_TAG}|" overlays/staging/kustomization.yaml
 
                         git config user.name "Jenkins CI"
@@ -177,7 +161,6 @@ pipeline {
             steps {
                 echo "等待 ArgoCD 同步 staging，Rollout 完成金丝雀发布"
 
-                // 触发 ArgoCD 硬刷新（如果装了 argocd CLI）
                 sh """
                     export PATH=\$PATH:/var/jenkins_home/bin
 
@@ -190,7 +173,6 @@ pipeline {
                     fi
                 """
 
-                // 等待 Rollout 就绪
                 sh """
                     export PATH=\$PATH:/var/jenkins_home/bin
                     kubectl argo rollouts status ${ROLLOUT_NAME} -n ${STAGING_NS} --timeout 300s
@@ -214,21 +196,29 @@ pipeline {
                             kubectl apply -f ${rbacFile}
                         """
 
-                        echo "==== 2/3 启动 LitmusChaos 混沌实验 ===="
+                        echo "==== 2/3 清理旧资源并启动 LitmusChaos 混沌实验 ===="
                         sh """
                             export PATH=\$PATH:/var/jenkins_home/bin
+                            ENGINE="${CHAOS_ENGINE_NAME}"
+                            NAMESPACE="${STAGING_NS}"
 
-                            # 删除旧的 ChaosEngine 和关联的 ChaosResult，避免状态残留
-                            kubectl delete chaosengine ${CHAOS_ENGINE_NAME} -n ${STAGING_NS} --ignore-not-found=true || true
-                            kubectl delete chaosresult -n ${STAGING_NS} -l chaosengine=${CHAOS_ENGINE_NAME} --ignore-not-found=true || true
+                            # 1) 删除旧 ChaosEngine
+                            kubectl delete chaosengine \$ENGINE -n \$NAMESPACE --ignore-not-found=true || true
 
-                            kubectl apply -f ${chaosFile} -n ${STAGING_NS}
+                            # 2) 按名字前缀删除所有旧 ChaosResult（不依赖标签）
+                            for r in \$(kubectl get chaosresult -n \$NAMESPACE -o name 2>/dev/null \\
+                                        | grep "/\${ENGINE}-" | cut -d/ -f2); do
+                                echo "删除旧 ChaosResult: \$r"
+                                kubectl delete chaosresult \$r -n \$NAMESPACE --ignore-not-found=true || true
+                            done
+
+                            # 3) 启动新实验
+                            kubectl apply -f ${chaosFile} -n \$NAMESPACE
                         """
 
                         echo "==== 3/3 等待混沌实验完成并判断结果 ===="
                         sh """
                             export PATH=\$PATH:/var/jenkins_home/bin
-
                             ENGINE="${CHAOS_ENGINE_NAME}"
                             NAMESPACE="${STAGING_NS}"
                             TIMEOUT=600
@@ -236,9 +226,10 @@ pipeline {
                             ELAPSED=0
                             ENGINE_STATUS=""
 
-                            # 1. 等待 ChaosEngine 的 engineStatus 变为 completed
+                            # ---- 3.1 等待 ChaosEngine 状态变为 completed ----
                             while [ \$ELAPSED -lt \$TIMEOUT ]; do
-                                ENGINE_STATUS=\$(kubectl get chaosengine \$ENGINE -n \$NAMESPACE -o jsonpath='{.status.engineStatus}' 2>/dev/null)
+                                ENGINE_STATUS=\$(kubectl get chaosengine \$ENGINE -n \$NAMESPACE \\
+                                    -o jsonpath='{.status.engineStatus}' 2>/dev/null)
                                 if [ "\$ENGINE_STATUS" = "completed" ]; then
                                     echo "✅ ChaosEngine 已完成 (engineStatus=completed)"
                                     break
@@ -254,17 +245,32 @@ pipeline {
                                 exit 1
                             fi
 
-                            # 2. 获取关联的 ChaosResult 名称
-                            RESULT_NAME=\$(kubectl get chaosresult -n \$NAMESPACE -l chaosengine=\$ENGINE -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+                            # ---- 3.2 按名字前缀查找 ChaosResult ----
+                            # ChaosResult 名格式固定：<engine-name>-<experiment-name>
+                            RESULT_NAME=""
+                            for i in \$(seq 1 12); do
+                                RESULT_NAME=\$(kubectl get chaosresult -n \$NAMESPACE -o name 2>/dev/null \\
+                                    | grep "/\${ENGINE}-" \\
+                                    | head -1 \\
+                                    | cut -d/ -f2)
+                                if [ -n "\$RESULT_NAME" ]; then
+                                    break
+                                fi
+                                echo "ChaosResult 尚未生成，等待中... (\$i/12)"
+                                sleep 5
+                            done
+
                             if [ -z "\$RESULT_NAME" ]; then
-                                echo "❌ 未找到与 ChaosEngine \$ENGINE 关联的 ChaosResult"
+                                echo "❌ 未找到以 \${ENGINE}- 开头的 ChaosResult"
+                                echo "--- 当前 namespace 下所有 ChaosResult ---"
                                 kubectl get chaosresult -n \$NAMESPACE || true
                                 exit 1
                             fi
                             echo "找到 ChaosResult: \$RESULT_NAME"
 
-                            # 3. 读取 verdict
-                            RESULT=\$(kubectl get chaosresult \$RESULT_NAME -n \$NAMESPACE -o jsonpath='{.status.experimentStatus.verdict}' 2>/dev/null)
+                            # ---- 3.3 读取 verdict ----
+                            RESULT=\$(kubectl get chaosresult \$RESULT_NAME -n \$NAMESPACE \\
+                                -o jsonpath='{.status.experimentStatus.verdict}' 2>/dev/null)
                             echo "最终 LitmusChaos 结果: \$RESULT"
 
                             if [ "\$RESULT" != "Pass" ]; then
@@ -272,7 +278,8 @@ pipeline {
                                 echo "--- ChaosResult 详情 ---"
                                 kubectl describe chaosresult \$RESULT_NAME -n \$NAMESPACE || true
                                 echo "--- 错误信息 ---"
-                                kubectl get chaosresult \$RESULT_NAME -n \$NAMESPACE -o jsonpath='{.status.experimentStatus.errorOutput}' 2>/dev/null || true
+                                kubectl get chaosresult \$RESULT_NAME -n \$NAMESPACE \\
+                                    -o jsonpath='{.status.experimentStatus.errorOutput}' 2>/dev/null || true
                                 exit 1
                             fi
 
@@ -319,7 +326,6 @@ pipeline {
                         git clone https://\${GIT_USER}:\${GIT_PWD}@${REPO_HOST} gitops-tmp-prod
                         cd gitops-tmp-prod
 
-                        # 更新 prod overlay 的 newTag
                         sed -i "s|newTag: .*|newTag: ${env.IMAGE_TAG}|" overlays/prod/kustomization.yaml
 
                         git config user.name "Jenkins CI"
@@ -353,7 +359,6 @@ pipeline {
                     fi
                 """
 
-                // 等待生产 Rollout 就绪（prod 步骤更长，给 10 分钟）
                 sh """
                     export PATH=\$PATH:/var/jenkins_home/bin
                     kubectl argo rollouts status ${ROLLOUT_NAME} -n ${PROD_NS} --timeout 600s
@@ -384,7 +389,6 @@ pipeline {
         }
         always {
             echo "流水线执行结束"
-            // 可选：清理 Docker 镜像
             // sh "docker rmi ${env.IMAGE_FULL_NAME} || true"
         }
     }
