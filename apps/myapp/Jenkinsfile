@@ -82,7 +82,7 @@ stage('2. 静态扫描 + 单元测试') {
             export GOPATH=/var/jenkins_home/go
             export PATH=\$PATH:\$GOPATH/bin
             export GO111MODULE=on
-            export GOTOOLCHAIN=local   // 添加这一行
+            export GOTOOLCHAIN=local   # 添加这一行
             # 国内代理，避免容器出网被拦截
             go env -w GOPROXY=https://goproxy.cn,direct
             go env -w GOSUMDB=off
