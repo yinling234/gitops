@@ -157,9 +157,6 @@ pipeline {
                         # 更新 staging overlay 的 newTag
                         sed -i "s|newTag: .*|newTag: ${env.IMAGE_TAG}|" overlays/staging/kustomization.yaml
 
-                        # 同时把 rollout.yaml 里的 image 占位 tag 也更新（如果 base 里用了 latest）
-                        # 不需要，因为 Kustomize images 会覆盖
-
                         git config user.name "Jenkins CI"
                         git config user.email "ci@example.com"
                         git add overlays/staging/kustomization.yaml
@@ -221,10 +218,9 @@ pipeline {
                         sh """
                             export PATH=\$PATH:/var/jenkins_home/bin
 
-                            # 如果已存在旧的 ChaosEngine，先删除，避免状态残留
+                            # 删除旧的 ChaosEngine 和关联的 ChaosResult，避免状态残留
                             kubectl delete chaosengine ${CHAOS_ENGINE_NAME} -n ${STAGING_NS} --ignore-not-found=true || true
-                            # 删除旧的 ChaosResult（如果存在）
-                            kubectl delete chaosresult ${CHAOS_ENGINE_NAME}-pod-network-latency -n ${STAGING_NS} --ignore-not-found=true || true
+                            kubectl delete chaosresult -n ${STAGING_NS} -l chaosengine=${CHAOS_ENGINE_NAME} --ignore-not-found=true || true
 
                             kubectl apply -f ${chaosFile} -n ${STAGING_NS}
                         """
@@ -233,30 +229,50 @@ pipeline {
                         sh """
                             export PATH=\$PATH:/var/jenkins_home/bin
 
-                            RESULT_NAME="${CHAOS_ENGINE_NAME}-pod-network-latency"
+                            ENGINE="${CHAOS_ENGINE_NAME}"
+                            NAMESPACE="${STAGING_NS}"
                             TIMEOUT=600
                             INTERVAL=10
                             ELAPSED=0
-                            RESULT=""
+                            ENGINE_STATUS=""
 
+                            # 1. 等待 ChaosEngine 的 engineStatus 变为 completed
                             while [ \$ELAPSED -lt \$TIMEOUT ]; do
-                                RESULT=\$(kubectl get chaosresult \$RESULT_NAME -n ${STAGING_NS} -o jsonpath='{.status.experimentStatus.verdict}' 2>/dev/null)
-                                if [ "\$RESULT" = "Pass" ] || [ "\$RESULT" = "Fail" ] || [ "\$RESULT" = "Error" ]; then
+                                ENGINE_STATUS=\$(kubectl get chaosengine \$ENGINE -n \$NAMESPACE -o jsonpath='{.status.engineStatus}' 2>/dev/null)
+                                if [ "\$ENGINE_STATUS" = "completed" ]; then
+                                    echo "✅ ChaosEngine 已完成 (engineStatus=completed)"
                                     break
                                 fi
-                                echo "等待 ChaosResult verdict... 当前: \$RESULT (\$ELAPSED/\$TIMEOUT 秒)"
+                                echo "等待 ChaosEngine 完成... 当前 engineStatus: \$ENGINE_STATUS (\$ELAPSED/\$TIMEOUT 秒)"
                                 sleep \$INTERVAL
                                 ELAPSED=\$((ELAPSED+INTERVAL))
                             done
 
+                            if [ "\$ENGINE_STATUS" != "completed" ]; then
+                                echo "❌ ChaosEngine 在 \$TIMEOUT 秒内未完成，当前状态: \$ENGINE_STATUS"
+                                kubectl describe chaosengine \$ENGINE -n \$NAMESPACE || true
+                                exit 1
+                            fi
+
+                            # 2. 获取关联的 ChaosResult 名称
+                            RESULT_NAME=\$(kubectl get chaosresult -n \$NAMESPACE -l chaosengine=\$ENGINE -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+                            if [ -z "\$RESULT_NAME" ]; then
+                                echo "❌ 未找到与 ChaosEngine \$ENGINE 关联的 ChaosResult"
+                                kubectl get chaosresult -n \$NAMESPACE || true
+                                exit 1
+                            fi
+                            echo "找到 ChaosResult: \$RESULT_NAME"
+
+                            # 3. 读取 verdict
+                            RESULT=\$(kubectl get chaosresult \$RESULT_NAME -n \$NAMESPACE -o jsonpath='{.status.experimentStatus.verdict}' 2>/dev/null)
                             echo "最终 LitmusChaos 结果: \$RESULT"
 
                             if [ "\$RESULT" != "Pass" ]; then
                                 echo "❌ 混沌测试未通过，当前 verdict: \$RESULT"
                                 echo "--- ChaosResult 详情 ---"
-                                kubectl describe chaosresult \$RESULT_NAME -n ${STAGING_NS} || true
+                                kubectl describe chaosresult \$RESULT_NAME -n \$NAMESPACE || true
                                 echo "--- 错误信息 ---"
-                                kubectl get chaosresult \$RESULT_NAME -n ${STAGING_NS} -o jsonpath='{.status.experimentStatus.errorOutput}' 2>/dev/null || true
+                                kubectl get chaosresult \$RESULT_NAME -n \$NAMESPACE -o jsonpath='{.status.experimentStatus.errorOutput}' 2>/dev/null || true
                                 exit 1
                             fi
 
@@ -276,13 +292,11 @@ pipeline {
             steps {
                 echo "等待人工审批，确认是否发布到生产环境"
 
-                // timeout: 30 分钟不审批就失败
-                // submitter: 只有指定用户/组能审批（可选）
                 input(
                     message: "staging 混沌测试通过，是否发布到生产？\n镜像: ${env.IMAGE_FULL_NAME}",
                     ok: '批准发布',
-                    submitter: '',          // 留空表示任何有权限的用户都可审批
-                    submitterParameter: '', // 不收集提交者参数
+                    submitter: '',
+                    submitterParameter: '',
                     parameters: []
                 )
 
