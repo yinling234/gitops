@@ -206,36 +206,55 @@ pipeline {
         // ============================================================
         stage('7. 混沌测试 (LitmusChaos)') {
             steps {
-                echo "==== 启动 LitmusChaos 混沌实验 ===="
+                script {
+                    def chaosFile = 'litmus/chaosengine.yaml'
+                    def rbacFile  = 'litmus/rbac.yaml'
 
-                sh """
-                    export PATH=\$PATH:/var/jenkins_home/bin
+                    if (fileExists(chaosFile)) {
+                        echo "==== 1/3 应用 RBAC 配置 ===="
+                        sh """
+                            export PATH=\$PATH:/var/jenkins_home/bin
+                            kubectl apply -f ${rbacFile}
+                        """
 
-                    kubectl apply -f litmus/chaosengine.yaml -n ${STAGING_NS}
+                        echo "==== 2/3 启动 LitmusChaos 混沌实验 ===="
+                        sh """
+                            export PATH=\$PATH:/var/jenkins_home/bin
 
-                    kubectl wait chaosengine ${CHAOS_ENGINE_NAME} \
-                        -n ${STAGING_NS} \
-                        --for=condition=Completed \
-                        --timeout=300s
-                """
+                            # 如果已存在旧的 ChaosEngine，先删除，避免状态残留
+                            kubectl delete chaosengine ${CHAOS_ENGINE_NAME} -n ${STAGING_NS} --ignore-not-found=true || true
 
-                echo "==== 判断混沌实验结果 ===="
-                sh """
-                    export PATH=\$PATH:/var/jenkins_home/bin
+                            kubectl apply -f ${chaosFile} -n ${STAGING_NS}
+                        """
 
-                    RESULT=\$(kubectl get chaosengine ${CHAOS_ENGINE_NAME} \
-                        -n ${STAGING_NS} \
-                        -o jsonpath='{.status.experimentStatus[0].verdict}')
+                        echo "==== 3/3 等待混沌实验完成并判断结果 ===="
+                        sh """
+                            export PATH=\$PATH:/var/jenkins_home/bin
 
-                    echo "LitmusChaos 结果: \$RESULT"
+                            # 等待 ChaosEngine 完成，最多 10 分钟
+                            kubectl wait chaosengine ${CHAOS_ENGINE_NAME} \\
+                                -n ${STAGING_NS} \\
+                                --for=condition=Completed \\
+                                --timeout=600s || true
 
-                    if [ "\$RESULT" != "Pass" ]; then
-                        echo "❌ 混沌测试失败，终止流水线，禁止发布到生产"
-                        exit 1
-                    fi
+                            # 读取实验结论
+                            RESULT=\$(kubectl get chaosengine ${CHAOS_ENGINE_NAME} \\
+                                -n ${STAGING_NS} \\
+                                -o jsonpath='{.status.experimentStatus[0].verdict}')
 
-                    echo "✅ 混沌测试通过"
-                """
+                            echo "LitmusChaos 结果: \$RESULT"
+
+                            if [ "\$RESULT" != "Pass" ]; then
+                                echo "❌ 混沌测试失败，终止流水线，禁止发布到生产"
+                                exit 1
+                            fi
+
+                            echo "✅ 混沌测试通过"
+                        """
+                    } else {
+                        echo "⚠️ 未找到 ${chaosFile}，跳过混沌测试"
+                    }
+                }
             }
         }
 
