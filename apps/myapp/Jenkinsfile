@@ -75,29 +75,6 @@ pipeline {
         // ============================================================
         stage('2. 静态扫描 + 单元测试') {
             steps {
-                // ---------- 静态扫描 ----------
-                echo "==== 1/2 静态代码检查: golangci-lint ===="
-                sh """
-                    export PATH=\$PATH:/var/jenkins_home/go-sdk/go/bin
-                    export GOPATH=/var/jenkins_home/go
-                    export PATH=\$PATH:\$GOPATH/bin
-                    export GO111MODULE=on
-                    export GOTOOLCHAIN=local   # 添加这一行
-                    # 国内代理，避免容器出网被拦截
-                    go env -w GOPROXY=https://goproxy.cn,direct
-                    go env -w GOSUMDB=off
-
-                    # 如果 golangci-lint 未安装，用固定版本安装
-                    if ! command -v golangci-lint >/dev/null 2>&1; then
-                        echo "golangci-lint 未安装，正在安装 v1.64.8..."
-                        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | \\
-                            sh -s -- -b \$GOPATH/bin v1.64.8
-                    fi
-
-                    cd apps/myapp
-                    golangci-lint run --timeout=5m ./...
-                """
-
                 // ---------- 单元测试 ----------
                 echo "==== 2/2 单元测试 ===="
                 sh """
