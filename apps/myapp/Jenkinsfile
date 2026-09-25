@@ -1,60 +1,142 @@
 pipeline {
     agent any
+
+    parameters {
+        string(name: 'GIT_BRANCH', defaultValue: 'main', description: '推送的 git 分支，由 Argo Events 传入')
+        string(name: 'GIT_COMMIT', defaultValue: 'HEAD', description: '本次提交 commit hash，由 Argo Events 传入')
+    }
+
     environment {
-        // ========== 【你按需修改这里变量】 ==========
-        HARBOR_ADDR        = "192.168.30.11:30003"
-        HARBOR_PROJECT     = "library"
-        APP_NAME           = "mcp-hr-server"
-        STAGING_NS         = "staging"
-        PROD_NS            = "prod"
-        // Git仓库地址
-        CODE_REPO_URL      = "https://github.com/yinling234/gitops.git"
-        GITOPS_REPO_URL    = "https://github.com/yinling234/gitops.git"
-        // 镜像tag = git短commit hash
-        IMAGE_TAG          = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-        IMAGE_FULL_NAME    = "${HARBOR_ADDR}/${HARBOR_PROJECT}/${APP_NAME}:${IMAGE_TAG}"
-        // LitmusChaos资源名称
-        CHAOS_ENGINE_NAME  = "mcp-hr-chaos-engine"
+        // ========== 按需修改 ==========
+        HARBOR_ADDR     = "192.168.30.11:30003"
+        HARBOR_PROJECT  = "library"
+        APP_NAME        = "mcp-hr-server"
+        STAGING_NS      = "staging"
+        PROD_NS         = "prod"
+        STAGING_APP     = "myapp-staging"
+        PROD_APP        = "myapp-prod"
+        ROLLOUT_NAME    = "myapp"
+
+        // 业务代码和 GitOps 代码在同一个仓库
+        REPO_URL        = "https://github.com/yinling234/gitops.git"
+        REPO_HOST       = "github.com/yinling234/gitops.git"
+
+        // LitmusChaos 资源名
+        CHAOS_ENGINE_NAME = "mcp-hr-chaos-engine"
     }
-    triggers {
-        // GitHub push触发（注意Jenkins新版CSRF限制，前面讨论过）
-        githubPush()
-    }
+
     stages {
-        stage('1. 拉取业务代码') {
-            steps {
-                git url: "${CODE_REPO_URL}",
-                    credentialsId: 'github-code-cred',
-                    branch: 'main'
-            }
-        }
 
-        stage('2. 代码静态扫描 + 单元测试') {
+        // ============================================================
+        // Stage 1: 拉取代码 + 校验 commit
+        // ============================================================
+        stage('1. Checkout') {
             steps {
-                echo "==== 静态代码检查 ===="
-                sh """
-                # =========替换为你的静态扫描命令========
-                # 示例：SonarQube扫描
-                # sonar-scanner
-                echo "静态代码检查执行中"
-                """
+                script {
+                    // 按 Argo Events 传入的分支拉取
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${params.GIT_BRANCH}"]],
+                        userRemoteConfigs: [[
+                            url: "${env.REPO_URL}",
+                            credentialsId: 'github-code-cred'
+                        ]]
+                    ])
 
-                echo "==== 单元测试 ===="
-                sh """
-                # =========替换成你的单元测试命令========
-                # 例如 mvn test / go test ./... / npm test
-                echo "执行单元测试"
-                """
-            }
-            post {
-                always {
-                    // 单元测试报告，JUnit插件
-                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                    // 如果传了具体 commit，校验 HEAD 是否一致
+                    if (params.GIT_COMMIT != 'HEAD' && params.GIT_COMMIT != '') {
+                        sh "git rev-parse HEAD | grep ${params.GIT_COMMIT}"
+                    }
+
+                    // 用 commit 短哈希作为镜像 tag
+                    def shortSha = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    env.IMAGE_TAG       = shortSha
+                    env.IMAGE_FULL_NAME = "${HARBOR_ADDR}/${HARBOR_PROJECT}/${APP_NAME}:${shortSha}"
+
+                    echo "分支: ${params.GIT_BRANCH}"
+                    echo "Commit: ${params.GIT_COMMIT}"
+                    echo "镜像: ${env.IMAGE_FULL_NAME}"
                 }
             }
         }
 
-        stage('3. 构建容器镜像') {
+        // ============================================================
+        // Stage 2: 静态扫描 + 单元测试
+        // ============================================================
+// ============================================================
+// Stage 2: 静态扫描 + 单元测试
+// ============================================================
+// ============================================================
+// Stage 2: 静态扫描 + 单元测试
+// ============================================================
+stage('2. 静态扫描 + 单元测试') {
+    steps {
+        // ---------- 静态扫描 ----------
+        echo "==== 1/2 静态代码检查: golangci-lint ===="
+        sh """
+            export PATH=\$PATH:/var/jenkins_home/go-sdk/go/bin
+            export GOPATH=/var/jenkins_home/go
+            export PATH=\$PATH:\$GOPATH/bin
+            export GO111MODULE=on
+
+            # 国内代理，避免容器出网被拦截
+            go env -w GOPROXY=https://goproxy.cn,direct
+            go env -w GOSUMDB=off
+
+            # 如果 golangci-lint 未安装，用固定版本安装
+            if ! command -v golangci-lint >/dev/null 2>&1; then
+                echo "golangci-lint 未安装，正在安装 v1.64.8..."
+                curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | \\
+                    sh -s -- -b \$GOPATH/bin v1.64.8
+            fi
+
+            cd apps/myapp
+            golangci-lint run --out-format=tab --timeout=5m ./...
+        """
+
+        // ---------- 单元测试 ----------
+        echo "==== 2/2 单元测试 ===="
+        sh """
+            export PATH=\$PATH:/var/jenkins_home/go-sdk/go/bin
+            export GOPATH=/var/jenkins_home/go
+            export PATH=\$PATH:\$GOPATH/bin
+            export GO111MODULE=on
+
+            # 国内代理
+            go env -w GOPROXY=https://goproxy.cn,direct
+            go env -w GOSUMDB=off
+
+            cd apps/myapp
+
+            # 下载依赖（首次构建需要，后续走缓存）
+            go mod download
+
+            # 运行单元测试 + 生成覆盖率
+            go test -v -coverprofile=coverage.out -covermode=atomic ./...
+
+            # 打印覆盖率摘要
+            go tool cover -func=coverage.out
+        """
+    }
+
+    post {
+        always {
+            // 后续补充 JUnit / 覆盖率报告发布时，取消下面两行注释
+            // junit 'apps/myapp/reports/junit.xml'
+            // publishCoverage adapters: [coberturaAdapter('apps/myapp/coverage.xml')]
+
+            echo "Stage 2 完成"
+        }
+    }
+}
+        // ============================================================
+        // Stage 3: 构建容器镜像
+        // ============================================================
+        stage('3. 构建镜像') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'harbor-cred',
@@ -62,22 +144,30 @@ pipeline {
                     passwordVariable: 'HARBOR_PWD'
                 )]) {
                     sh """
-                    docker login ${HARBOR_ADDR} -u ${HARBOR_USER} -p ${HARBOR_PWD}
-                    docker build -t ${IMAGE_FULL_NAME} .
+                        docker login ${HARBOR_ADDR} -u ${HARBOR_USER} -p ${HARBOR_PWD}
+                        cd apps/myapp
+                        docker build -t ${env.IMAGE_FULL_NAME} .
                     """
                 }
             }
         }
 
-        stage('4. 推送镜像到Harbor') {
+        // ============================================================
+        // Stage 4: 推送镜像到 Harbor
+        // ============================================================
+        stage('4. 推送镜像') {
             steps {
                 sh """
-                docker push ${IMAGE_FULL_NAME}
+                    docker push ${env.IMAGE_FULL_NAME}
+                    echo "镜像已推送: ${env.IMAGE_FULL_NAME}"
                 """
             }
         }
 
-        stage('5. 更新GitOps仓库：修改预发布Rollout镜像版本') {
+        // ============================================================
+        // Stage 5: 更新 GitOps 仓库 staging 的镜像 tag
+        // ============================================================
+        stage('5. 更新 staging manifest') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'github-gitops-cred',
@@ -85,98 +175,188 @@ pipeline {
                     passwordVariable: 'GIT_PWD'
                 )]) {
                     sh """
-                    rm -rf gitops-tmp
-                    git clone ${GITOPS_REPO_URL} gitops-tmp
-                    cd gitops-tmp
-                    # sed替换staging rollout的image地址
-                    sed -i "s|image: ${HARBOR_ADDR}/${HARBOR_PROJECT}/${APP_NAME}:.*|image: ${IMAGE_FULL_NAME}|g" rollout-staging.yaml
+                        rm -rf gitops-tmp
+                        git clone https://\${GIT_USER}:\${GIT_PWD}@${REPO_HOST} gitops-tmp
+                        cd gitops-tmp
 
-                    git config user.name "Jenkins CI"
-                    git config user.email "ci@example.com"
-                    git add rollout-staging.yaml
-                    git commit -m "chore(staging): update image tag ${IMAGE_TAG}"
-                    git push https://${GIT_USER}:${GIT_PWD}@${GITOPS_REPO_URL.replace("https://","")}
-                    cd ..
-                    rm -rf gitops-tmp
+                        # 更新 staging overlay 的 newTag
+                        sed -i "s|newTag: .*|newTag: ${env.IMAGE_TAG}|" overlays/staging/kustomization.yaml
+
+                        # 同时把 rollout.yaml 里的 image 占位 tag 也更新（如果 base 里用了 latest）
+                        # 不需要，因为 Kustomize images 会覆盖
+
+                        git config user.name "Jenkins CI"
+                        git config user.email "ci@example.com"
+                        git add overlays/staging/kustomization.yaml
+                        git commit -m "chore(staging): update image tag ${env.IMAGE_TAG}"
+                        git push origin HEAD:${params.GIT_BRANCH}
+
+                        cd ..
+                        rm -rf gitops-tmp
                     """
                 }
             }
         }
 
-        stage('6. 等待ArgoCD同步 & ArgoRollout预发布部署完成') {
+        // ============================================================
+        // Stage 6: 等待 ArgoCD 同步 + staging Rollout 就绪
+        // ============================================================
+        stage('6. 等待 staging 部署就绪') {
             steps {
-                echo "等待ArgoCD同步Git配置到staging命名空间，等待Rollout部署就绪"
-                sleep 30
+                echo "等待 ArgoCD 同步 staging，Rollout 完成金丝雀发布"
+
+                // 触发 ArgoCD 硬刷新（如果装了 argocd CLI）
                 sh """
-                # 等待rollout所有副本就绪
-                kubectl argo rollouts wait rollout ${APP_NAME} -n ${STAGING_NS} --timeout 300s
+                    if command -v argocd >/dev/null 2>&1; then
+                        argocd app get ${STAGING_APP} --hard-refresh || true
+                        argocd app wait ${STAGING_APP} --health --timeout 300 || true
+                    else
+                        echo "argocd CLI 未安装，依赖自动同步"
+                        sleep 60
+                    fi
+                """
+
+                // 等待 Rollout 就绪
+                sh """
+                    kubectl argo rollouts status ${ROLLOUT_NAME} -n ${STAGING_NS} --timeout 300s
                 """
             }
         }
 
-        stage('7. LitmusChaos 混沌测试【关键关卡，失败直接阻断生产发布】') {
+        // ============================================================
+        // Stage 7: LitmusChaos 混沌测试（关键关卡）
+        // ============================================================
+        stage('7. 混沌测试 (LitmusChaos)') {
             steps {
-                echo "==== 启动LitmusChaos混沌实验 ===="
-                sh """
-                # 创建ChaosEngine，触发混沌实验
-                kubectl apply -f litmus/chaosengine.yaml -n ${STAGING_NS}
+                echo "==== 启动 LitmusChaos 混沌实验 ===="
 
-                # 等待混沌实验结束，最多等待300s
-                kubectl wait chaosengine ${CHAOS_ENGINE_NAME} -n ${STAGING_NS} --for=condition=Completed --timeout=300s
+                sh """
+                    kubectl apply -f litmus/chaosengine.yaml -n ${STAGING_NS}
+
+                    kubectl wait chaosengine ${CHAOS_ENGINE_NAME} \
+                        -n ${STAGING_NS} \
+                        --for=condition=Completed \
+                        --timeout=300s
                 """
 
-                echo "==== 查询混沌实验结果，判断实验是否PASS ===="
+                echo "==== 判断混沌实验结果 ===="
                 sh """
-                # 获取混沌实验最终结论
-                RESULT=\$(kubectl get chaosengine ${CHAOS_ENGINE_NAME} -n ${STAGING_NS} -o jsonpath='{.status.experimentStatus[0].verdict}')
-                echo "LitmusChaos实验结果: \$RESULT"
-                if [ "\$RESULT" != "Pass" ];then
-                    echo "❌ 混沌测试失败！终止流水线，禁止发布到生产"
-                    exit 1
-                fi
+                    RESULT=\$(kubectl get chaosengine ${CHAOS_ENGINE_NAME} \
+                        -n ${STAGING_NS} \
+                        -o jsonpath='{.status.experimentStatus[0].verdict}')
+
+                    echo "LitmusChaos 结果: \$RESULT"
+
+                    if [ "\$RESULT" != "Pass" ]; then
+                        echo "❌ 混沌测试失败，终止流水线，禁止发布到生产"
+                        exit 1
+                    fi
+
+                    echo "✅ 混沌测试通过"
                 """
             }
         }
 
-        stage('8. 混沌测试通过，更新GitOps生产Rollout，触发生产金丝雀发布') {
+        // ============================================================
+        // Stage 8: 审批门控
+        // ============================================================
+        stage('8. 审批门控') {
             steps {
-                echo "✅ Litmus混沌测试全部通过，开始更新生产环境Rollout镜像"
+                echo "等待人工审批，确认是否发布到生产环境"
+
+                // timeout: 30 分钟不审批就失败
+                // submitter: 只有指定用户/组能审批（可选）
+                input(
+                    message: "staging 混沌测试通过，是否发布到生产？\n镜像: ${env.IMAGE_FULL_NAME}",
+                    ok: '批准发布',
+                    submitter: '',          // 留空表示任何有权限的用户都可审批
+                    submitterParameter: '', // 不收集提交者参数
+                    parameters: []
+                )
+
+                echo "✅ 已批准，继续生产发布"
+            }
+        }
+
+        // ============================================================
+        // Stage 9: 更新 GitOps 仓库 prod 的镜像 tag
+        // ============================================================
+        stage('9. 更新 prod manifest') {
+            steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'github-gitops-cred',
                     usernameVariable: 'GIT_USER',
                     passwordVariable: 'GIT_PWD'
                 )]) {
                     sh """
-                    rm -rf gitops-tmp-prod
-                    git clone ${GITOPS_REPO_URL} gitops-tmp-prod
-                    cd gitops-tmp-prod
-                    # 修改生产环境rollout镜像版本
-                    sed -i "s|image: ${HARBOR_ADDR}/${HARBOR_PROJECT}/${APP_NAME}:.*|image: ${IMAGE_FULL_NAME}|g" rollout-prod.yaml
+                        rm -rf gitops-tmp-prod
+                        git clone https://\${GIT_USER}:\${GIT_PWD}@${REPO_HOST} gitops-tmp-prod
+                        cd gitops-tmp-prod
 
-                    git config user.name "Jenkins CI"
-                    git config user.email "ci@example.com"
-                    git add rollout-prod.yaml
-                    git commit -m "chore(prod): canary release image ${IMAGE_TAG}, chaos test passed"
-                    git push https://${GIT_USER}:${GIT_PWD}@${GITOPS_REPO_URL.replace("https://","")}
-                    cd ..
-                    rm -rf gitops-tmp-prod
+                        # 更新 prod overlay 的 newTag
+                        sed -i "s|newTag: .*|newTag: ${env.IMAGE_TAG}|" overlays/prod/kustomization.yaml
+
+                        git config user.name "Jenkins CI"
+                        git config user.email "ci@example.com"
+                        git add overlays/prod/kustomization.yaml
+                        git commit -m "chore(prod): canary release image ${env.IMAGE_TAG}, chaos passed & approved"
+                        git push origin HEAD:${params.GIT_BRANCH}
+
+                        cd ..
+                        rm -rf gitops-tmp-prod
                     """
                 }
-                echo "GitOps仓库已更新，ArgoCD自动同步生产Rollout，Argo Rollout执行金丝雀发布"
-                echo "可观测：Prometheus采集指标，Grafana监控面板，HPA自动扩缩容"
+            }
+        }
+
+        // ============================================================
+        // Stage 10: 等待 prod Rollout 金丝雀发布完成
+        // ============================================================
+        stage('10. 等待 prod 部署就绪') {
+            steps {
+                echo "等待 ArgoCD 同步 prod，Argo Rollout 执行金丝雀发布"
+
+                sh """
+                    if command -v argocd >/dev/null 2>&1; then
+                        argocd app get ${PROD_APP} --hard-refresh || true
+                        argocd app wait ${PROD_APP} --health --timeout 600 || true
+                    else
+                        sleep 60
+                    fi
+                """
+
+                // 等待生产 Rollout 就绪（prod 步骤更长，给 10 分钟）
+                sh """
+                    kubectl argo rollouts status ${ROLLOUT_NAME} -n ${PROD_NS} --timeout 600s
+                """
+
+                echo "✅ 生产金丝雀发布完成"
             }
         }
     }
+
     post {
         success {
-            echo "✅ 流水线全部成功！预发布混沌测试通过，生产金丝雀发布已触发"
+            echo "================================================"
+            echo "✅ 流水线全部成功"
+            echo "  - 镜像: ${env.IMAGE_FULL_NAME}"
+            echo "  - staging: 已发布并通过混沌测试"
+            echo "  - prod: 已通过金丝雀发布"
+            echo "  - 可观测: 请查看 Prometheus / Grafana"
+            echo "================================================"
         }
         failure {
-            echo "❌ 流水线失败，中断发布！若混沌测试失败，生产环境不会更新"
+            echo "================================================"
+            echo "❌ 流水线失败"
+            echo "  - 请检查 Jenkins 日志"
+            echo "  - 若混沌测试失败，生产环境未更新"
+            echo "  - 可观测: Prometheus / Grafana 查看异常指标"
+            echo "================================================"
         }
         always {
-            echo "流水线执行结束，请查看Prometheus/Grafana观测应用运行指标，HPA自动管理副本"
+            echo "流水线执行结束"
+            // 可选：清理 Docker 镜像
+            // sh "docker rmi ${env.IMAGE_FULL_NAME} || true"
         }
     }
 }
-
