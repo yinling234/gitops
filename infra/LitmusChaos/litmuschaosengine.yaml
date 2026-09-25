@@ -5,13 +5,13 @@ metadata:
   namespace: staging
 spec:
   engineState: "active"        # active 表示立即启动实验
-  annotationCheck: "false"     # 关闭注解检查
+  annotationCheck: "false"     # 关闭注解检查，实验将作用于标签匹配的所有 Pod
   appinfo:
     appns: "staging"           # 目标应用所在命名空间
     applabel: "app.kubernetes.io/name=myapp"   # 必须与你的应用 Pod 标签一致
-    appkind: "deployment"      # 你的应用资源类型：deployment / statefulset / daemonset
-  chaosServiceAccount: litmus-admin   # 使用上一步创建的 ServiceAccount
-  jobCleanUpPolicy: 'delete'   # 实验结束后清理资源
+    appkind: "rollout"         # 关键修改：你的应用是 Argo Rollouts，因此改为 rollout
+  chaosServiceAccount: litmus-admin   # 使用在 staging 命名空间创建的 ServiceAccount
+  jobCleanUpPolicy: 'delete'   # 实验结束后自动清理实验 Job
   experiments:
     - name: pod-delete         # 实验名称：删除 Pod
       spec:
@@ -24,4 +24,4 @@ spec:
             - name: FORCE
               value: 'false'       # 优雅删除（true 为强制删除）
             - name: PODS_AFFECTED_PERC
-              value: '100'         # 影响 100% 的 Pod
+              value: '100'         # 影响 100% 的 Pod（请根据实际测试需求调整）
