@@ -67,72 +67,73 @@ pipeline {
         // ============================================================
         // Stage 2: 静态扫描 + 单元测试
         // ============================================================
-// ============================================================
-// Stage 2: 静态扫描 + 单元测试
-// ============================================================
-// ============================================================
-// Stage 2: 静态扫描 + 单元测试
-// ============================================================
-stage('2. 静态扫描 + 单元测试') {
-    steps {
-        // ---------- 静态扫描 ----------
-        echo "==== 1/2 静态代码检查: golangci-lint ===="
-        sh """
-            export PATH=\$PATH:/var/jenkins_home/go-sdk/go/bin
-            export GOPATH=/var/jenkins_home/go
-            export PATH=\$PATH:\$GOPATH/bin
-            export GO111MODULE=on
-            export GOTOOLCHAIN=local   # 添加这一行
-            # 国内代理，避免容器出网被拦截
-            go env -w GOPROXY=https://goproxy.cn,direct
-            go env -w GOSUMDB=off
+        // ============================================================
+        // Stage 2: 静态扫描 + 单元测试
+        // ============================================================
+        // ============================================================
+        // Stage 2: 静态扫描 + 单元测试
+        // ============================================================
+        stage('2. 静态扫描 + 单元测试') {
+            steps {
+                // ---------- 静态扫描 ----------
+                echo "==== 1/2 静态代码检查: golangci-lint ===="
+                sh """
+                    export PATH=\$PATH:/var/jenkins_home/go-sdk/go/bin
+                    export GOPATH=/var/jenkins_home/go
+                    export PATH=\$PATH:\$GOPATH/bin
+                    export GO111MODULE=on
+                    export GOTOOLCHAIN=local   # 添加这一行
+                    # 国内代理，避免容器出网被拦截
+                    go env -w GOPROXY=https://goproxy.cn,direct
+                    go env -w GOSUMDB=off
 
-            # 如果 golangci-lint 未安装，用固定版本安装
-            if ! command -v golangci-lint >/dev/null 2>&1; then
-                echo "golangci-lint 未安装，正在安装 v1.64.8..."
-                curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | \\
-                    sh -s -- -b \$GOPATH/bin v1.64.8
-            fi
+                    # 如果 golangci-lint 未安装，用固定版本安装
+                    if ! command -v golangci-lint >/dev/null 2>&1; then
+                        echo "golangci-lint 未安装，正在安装 v1.64.8..."
+                        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | \\
+                            sh -s -- -b \$GOPATH/bin v1.64.8
+                    fi
 
-            cd apps/myapp
-            golangci-lint run --out-format=tab --timeout=5m ./...
-        """
+                    cd apps/myapp
+                    golangci-lint run --timeout=5m ./...
+                """
 
-        // ---------- 单元测试 ----------
-        echo "==== 2/2 单元测试 ===="
-        sh """
-            export PATH=\$PATH:/var/jenkins_home/go-sdk/go/bin
-            export GOPATH=/var/jenkins_home/go
-            export PATH=\$PATH:\$GOPATH/bin
-            export GO111MODULE=on
+                // ---------- 单元测试 ----------
+                echo "==== 2/2 单元测试 ===="
+                sh """
+                    export PATH=\$PATH:/var/jenkins_home/go-sdk/go/bin
+                    export GOPATH=/var/jenkins_home/go
+                    export PATH=\$PATH:\$GOPATH/bin
+                    export GO111MODULE=on
 
-            # 国内代理
-            go env -w GOPROXY=https://goproxy.cn,direct
-            go env -w GOSUMDB=off
+                    # 国内代理
+                    go env -w GOPROXY=https://goproxy.cn,direct
+                    go env -w GOSUMDB=off
 
-            cd apps/myapp
+                    cd apps/myapp
 
-            # 下载依赖（首次构建需要，后续走缓存）
-            go mod download
+                    # 下载依赖（首次构建需要，后续走缓存）
+                    go mod download
 
-            # 运行单元测试 + 生成覆盖率
-            go test -v -coverprofile=coverage.out -covermode=atomic ./...
+                    # 运行单元测试 + 生成覆盖率
+                    go test -v -coverprofile=coverage.out -covermode=atomic ./...
 
-            # 打印覆盖率摘要
-            go tool cover -func=coverage.out
-        """
-    }
+                    # 打印覆盖率摘要
+                    go tool cover -func=coverage.out
+                """
+            }
 
-    post {
-        always {
-            // 后续补充 JUnit / 覆盖率报告发布时，取消下面两行注释
-            // junit 'apps/myapp/reports/junit.xml'
-            // publishCoverage adapters: [coberturaAdapter('apps/myapp/coverage.xml')]
+            post {
+                always {
+                    // 后续补充 JUnit / 覆盖率报告发布时，取消下面两行注释
+                    // junit 'apps/myapp/reports/junit.xml'
+                    // publishCoverage adapters: [coberturaAdapter('apps/myapp/coverage.xml')]
 
-            echo "Stage 2 完成"
+                    echo "Stage 2 完成"
+                }
+            }
         }
-    }
-}
+
         // ============================================================
         // Stage 3: 构建容器镜像
         // ============================================================
